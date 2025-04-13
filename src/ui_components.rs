@@ -4,17 +4,24 @@ use crate::html_renderer::HtmlRenderer;
 
 pub fn render_html_content(ui: &mut Ui, html_parser: &html_parser::Dom, html_renderer: &HtmlRenderer) {
     ui.separator();
-    ui.heading("Rendered HTML:");
+    // Remove the "Rendered HTML:" heading
     
-    ScrollArea::vertical().show(ui, |ui| {
-        // Find the body tag for rendering
-        let body = html_renderer.find_body_element(&html_parser.children);
-        if let Some(body_children) = body {
-            html_renderer.render_html_node(ui, body_children);
-        } else {
-            // If no body tag is found, render everything
-            html_renderer.render_html_node(ui, &html_parser.children);
-        }
+    // Create a frame with white background for rendered HTML
+    let html_frame = egui::Frame::default()
+        .fill(egui::Color32::from_rgb(255, 255, 255))
+        .inner_margin(egui::style::Margin::same(10.0));
+        
+    html_frame.show(ui, |ui| {
+        ScrollArea::vertical().show(ui, |ui| {
+            // Find the body tag for rendering
+            let body = html_renderer.find_body_element(&html_parser.children);
+            if let Some(body_children) = body {
+                html_renderer.render_html_node(ui, body_children);
+            } else {
+                // If no body tag is found, render everything
+                html_renderer.render_html_node(ui, &html_parser.children);
+            }
+        });
     });
 }
 

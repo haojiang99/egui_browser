@@ -112,7 +112,7 @@ pub struct EguiBrowser {
 
 impl Default for EguiBrowser {
     fn default() -> Self {
-        let initial_url = "https://example.com".to_string();
+        let initial_url = "http://web.simmons.edu/~grovesd/comm244/notes/week3/html-test-page.html".to_string();
         let link_handler = LinkHandler::new();
         let firefox_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0".to_string();
         Self {
@@ -129,8 +129,30 @@ impl Default for EguiBrowser {
     }
 }
 
+impl EguiBrowser {
+    // We'll retain this method but not apply it globally
+    // so UI stays dark but web content can be white
+    fn _configure_light_style(&self, ctx: &Context) {
+        let mut style = (*ctx.style()).clone();
+        
+        // Set background colors to white
+        style.visuals.panel_fill = egui::Color32::from_rgb(255, 255, 255);
+        style.visuals.window_fill = egui::Color32::from_rgb(255, 255, 255);
+        style.visuals.extreme_bg_color = egui::Color32::from_rgb(255, 255, 255);
+        
+        // Set text/UI elements to dark
+        style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::from_rgb(33, 33, 33);
+        style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::from_rgb(33, 33, 33);
+        style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(33, 33, 33);
+        style.visuals.widgets.active.fg_stroke.color = egui::Color32::from_rgb(33, 33, 33);
+        
+        ctx.set_style(style);
+    }
+}
+
 impl eframe::App for EguiBrowser {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+        // UI stays in default dark theme, no style configuration needed
         // Check if a link was clicked and handle it
         if let Some(link_url) = self.link_handler.take_link() {
             self.url = link_url.clone();
@@ -138,6 +160,7 @@ impl eframe::App for EguiBrowser {
             self.fetch_url(ctx.clone());
         }
 
+        // Use default (dark) frame for the UI elements
         egui::CentralPanel::default().show(ctx, |ui| {
             
             
