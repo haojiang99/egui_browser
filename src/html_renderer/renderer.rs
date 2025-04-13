@@ -1,6 +1,6 @@
 // src/html_renderer/renderer.rs
 use crate::style::ElementStyle;
-use crate::app::LinkHandler;
+use crate::app::{LinkHandler, EguiBrowser};
 use egui::Ui;
 use std::collections::HashMap;
 
@@ -16,11 +16,26 @@ use super::text_processor::get_text_content;
 pub struct HtmlRenderer {
     pub style_map: HashMap<String, ElementStyle>,
     pub link_handler: LinkHandler,
+    pub browser: Option<*const EguiBrowser>,
 }
 
 impl HtmlRenderer {
     pub fn new(style_map: HashMap<String, ElementStyle>, link_handler: LinkHandler) -> Self {
-        Self { style_map, link_handler }
+        Self { 
+            style_map, 
+            link_handler,
+            browser: None,
+        }
+    }
+    
+    pub fn set_browser(&mut self, browser: &EguiBrowser) {
+        self.browser = Some(browser as *const EguiBrowser);
+    }
+    
+    pub fn get_browser(&self) -> Option<&EguiBrowser> {
+        unsafe {
+            self.browser.map(|ptr| &*ptr)
+        }
     }
     
     // Find the body element in the DOM
@@ -92,7 +107,7 @@ impl HtmlRenderer {
                         
                         // Image
                         "img" => {
-                            render_image(ui, element);
+                            render_image(ui, element, self);
                         }
                         
                         // Horizontal rule

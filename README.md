@@ -2,6 +2,10 @@
 
 A lightweight HTML browser built with Rust and egui.
 
+## Screenshot
+
+![egui Browser Screenshot](screenshot/egui_browser_screenshot1.png)
+
 ## Features
 
 - Basic HTML rendering

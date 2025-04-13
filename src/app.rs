@@ -3,9 +3,10 @@ use crate::html_renderer::HtmlRenderer;
 use crate::style::create_default_styles;
 use crate::ui_components;
 use eframe::egui;
-use egui::Context;
+use egui::{Context, Image};
 use poll_promise::Promise;
 use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 
 // Store the clicked link URL
 #[derive(Clone, Default)]
@@ -108,6 +109,10 @@ pub struct EguiBrowser {
     navigation: NavigationHistory,
     // User agent string
     user_agent: String,
+    // Image cache: URL -> (texture_id, size)
+    image_cache: HashMap<String, (egui::TextureId, egui::Vec2)>,
+    // Current image fetching promises
+    image_promises: HashMap<String, Promise<Result<ehttp::Response, String>>>,
 }
 
 impl Default for EguiBrowser {
@@ -125,6 +130,8 @@ impl Default for EguiBrowser {
             link_handler,
             navigation: NavigationHistory::new(initial_url),
             user_agent: firefox_user_agent,
+            image_cache: HashMap::new(),
+            image_promises: HashMap::new(),
         }
     }
 }
@@ -164,7 +171,12 @@ impl EguiBrowser {
 
 impl eframe::App for EguiBrowser {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
-        // UI stays in default dark theme, no style configuration needed
+        // Process any loaded images 
+        self.process_images(ctx);
+        
+        // Set browser reference in renderer using a safer approach
+        let browser_ptr = self as *const Self;
+        self.html_renderer.browser = Some(browser_ptr);
         // Check if a link was clicked and handle it
         if let Some(link_url) = self.link_handler.take_link() {
             self.url = link_url.clone();
@@ -300,5 +312,101 @@ impl EguiBrowser {
         });
         
         self.fetch_promise = Some(promise);
+    }
+    
+    // Fetch image from URL and add to cache
+    pub fn fetch_image(&mut self, ctx: &Context, image_url: String) {
+        // Skip if already fetching or in cache
+        if self.image_cache.contains_key(&image_url) || self.image_promises.contains_key(&image_url) {
+            return;
+        }
+        
+        // Resolve relative URLs
+        let full_url = if image_url.starts_with("http") {
+            image_url.clone()
+        } else {
+            // Simple URL joining logic - could be improved
+            let base_url = self.url.clone();
+            if image_url.starts_with('/') {
+                // Get domain part of the URL
+                // Find the domain part by locating the third slash (after http://)
+                if let Some(domain_end) = base_url[8..].find('/').map(|pos| pos + 8) {
+                    base_url[..domain_end].to_string() + &image_url
+                } else {
+                    base_url + &image_url
+                }
+            } else {
+                // Remove filename part from base URL
+                if let Some(last_slash) = base_url.rfind('/') {
+                    base_url[..=last_slash].to_string() + &image_url
+                } else {
+                    base_url + "/" + &image_url
+                }
+            }
+        };
+        
+        // Create the request with the user agent
+        let mut request = ehttp::Request::get(&full_url);
+        request.headers.insert("User-Agent".to_string(), self.user_agent.clone());
+        
+        let ctx_clone = ctx.clone();
+        let promise = Promise::spawn_thread("fetch_image", move || {
+            let result = ehttp::fetch_blocking(&request);
+            ctx_clone.request_repaint();
+            result
+        });
+        
+        self.image_promises.insert(image_url, promise);
+    }
+    
+    // Process loaded images and add to texture cache
+    fn process_images(&mut self, ctx: &Context) {
+        let mut completed_urls = Vec::new();
+        
+        // Check all image promises
+        for (url, promise) in &self.image_promises {
+            if let Some(result) = promise.ready() {
+                completed_urls.push(url.clone());
+                
+                match result {
+                    Ok(response) => {
+                        // Try to load the image
+                        if let Ok(image) = image::load_from_memory(&response.bytes) {
+                            let image = image.to_rgba8();
+                            let dimensions = image.dimensions();
+                            let image_data = egui::ColorImage::from_rgba_unmultiplied(
+                                [dimensions.0 as usize, dimensions.1 as usize],
+                                &image.into_raw(),
+                            );
+                            
+                            // Add to texture cache
+                            let texture = ctx.load_texture(
+                                url.clone(),
+                                image_data,
+                                Default::default(),
+                            );
+                            
+                            self.image_cache.insert(
+                                url.clone(),
+                                (texture.id(), egui::Vec2::new(dimensions.0 as f32, dimensions.1 as f32)),
+                            );
+                        }
+                    }
+                    Err(_) => {
+                        // Image loading failed - ignore for now
+                    }
+                }
+            }
+        }
+        
+        // Remove completed promises
+        for url in completed_urls {
+            self.image_promises.remove(&url);
+        }
+    }
+    
+    // Get image texture if available
+    pub fn get_image(&self, url: &str) -> Option<(egui::TextureId, egui::Vec2)> {
+        self.image_cache.get(url).copied()
     }
 }

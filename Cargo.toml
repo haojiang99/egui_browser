@@ -12,3 +12,4 @@ ehttp = { version = "0.3.0", features = ["native-async"] }    # HTTP client
 poll-promise = "0.3.0"  # For async operations
 html_parser = "0.7.0"  # For parsing HTML
 winapi = { version = "0.3.9", features = ["winuser", "windef"] }
+image = "0.24.6"  # For image processing
