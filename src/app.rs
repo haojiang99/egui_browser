@@ -15,6 +15,8 @@ pub struct EguiBrowser {
     fetch_promise: Option<Promise<Result<ehttp::Response, String>>>,
     // HTML renderer with styling
     html_renderer: HtmlRenderer,
+    // State for showing/hiding raw HTML
+    show_raw_html: bool,
 }
 
 impl Default for EguiBrowser {
@@ -25,6 +27,7 @@ impl Default for EguiBrowser {
             error_message: None,
             fetch_promise: None,
             html_renderer: HtmlRenderer::new(create_default_styles()),
+            show_raw_html: false,
         }
     }
 }
@@ -85,10 +88,7 @@ impl eframe::App for EguiBrowser {
             
             // Show HTML content
             if let Some(html) = &self.html_content {
-                // Display raw HTML
-                ui_components::render_raw_html_view(ui, html);
-                
-                // Display rendered HTML
+                // First display rendered HTML
                 match html_parser::Dom::parse(html) {
                     Ok(dom) => {
                         ui_components::render_html_content(ui, &dom, &self.html_renderer);
@@ -97,6 +97,9 @@ impl eframe::App for EguiBrowser {
                         ui.colored_label(egui::Color32::RED, format!("Failed to parse HTML: {}", err));
                     }
                 }
+                
+                // Then display raw HTML below with toggle
+                ui_components::render_raw_html_view(ui, html, &mut self.show_raw_html);
             }
         });
     }

@@ -2,19 +2,6 @@
 use egui::{ScrollArea, TextEdit, Ui};
 use crate::html_renderer::HtmlRenderer;
 
-pub fn render_raw_html_view(ui: &mut Ui, html: &str) {
-    ui.separator();
-    ui.heading("Raw HTML:");
-    
-    // Create a collapsing region to hide/show raw HTML
-    egui::collapsing_header::CollapsingHeader::new("View Source")
-        .default_open(false)
-        .show(ui, |ui| {
-            let mut text = html.to_string();
-            ui.add(TextEdit::multiline(&mut text).desired_width(f32::INFINITY));
-        });
-}
-
 pub fn render_html_content(ui: &mut Ui, html_parser: &html_parser::Dom, html_renderer: &HtmlRenderer) {
     ui.separator();
     ui.heading("Rendered HTML:");
@@ -29,4 +16,20 @@ pub fn render_html_content(ui: &mut Ui, html_parser: &html_parser::Dom, html_ren
             html_renderer.render_html_node(ui, &html_parser.children);
         }
     });
+}
+
+pub fn render_raw_html_view(ui: &mut Ui, html: &str, show_html: &mut bool) {
+    ui.separator();
+    
+    // Add a toggle button to show/hide the raw HTML
+    ui.horizontal(|ui| {
+        ui.heading("Raw HTML:");
+        ui.checkbox(show_html, "Show Source");
+    });
+    
+    // Only show the raw HTML if the toggle is on
+    if *show_html {
+        let mut text = html.to_string();
+        ui.add(TextEdit::multiline(&mut text).desired_width(f32::INFINITY).desired_rows(10));
+    }
 }
