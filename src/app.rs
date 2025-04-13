@@ -31,6 +31,66 @@ impl LinkHandler {
     }
 }
 
+// Navigation history structure
+struct NavigationHistory {
+    history: Vec<String>,
+    current_index: usize,
+}
+
+impl NavigationHistory {
+    fn new(initial_url: String) -> Self {
+        Self {
+            history: vec![initial_url],
+            current_index: 0,
+        }
+    }
+
+    fn can_go_back(&self) -> bool {
+        self.current_index > 0
+    }
+
+    fn can_go_forward(&self) -> bool {
+        self.current_index < self.history.len() - 1
+    }
+
+    fn go_back(&mut self) -> Option<&str> {
+        if self.can_go_back() {
+            self.current_index -= 1;
+            Some(&self.history[self.current_index])
+        } else {
+            None
+        }
+    }
+
+    fn go_forward(&mut self) -> Option<&str> {
+        if self.can_go_forward() {
+            self.current_index += 1;
+            Some(&self.history[self.current_index])
+        } else {
+            None
+        }
+    }
+
+    fn add_url(&mut self, url: String) {
+        // Remove any forward history
+        if self.current_index < self.history.len() - 1 {
+            self.history.truncate(self.current_index + 1);
+        }
+        
+        // Don't add if it's the same as the current URL
+        if self.current_url() == url {
+            return;
+        }
+        
+        self.history.push(url);
+        self.current_index = self.history.len() - 1;
+    }
+
+    fn current_url(&self) -> String {
+        self.history[self.current_index].clone()
+    }
+}
+
 // Our application state
 pub struct EguiBrowser {
     url: String,
@@ -44,19 +104,23 @@ pub struct EguiBrowser {
     show_raw_html: bool,
     // Link handler for clicked links
     link_handler: LinkHandler,
+    // Navigation history
+    navigation: NavigationHistory,
 }
 
 impl Default for EguiBrowser {
     fn default() -> Self {
+        let initial_url = "https://example.com".to_string();
         let link_handler = LinkHandler::new();
         Self {
-            url: "https://example.com".to_string(),
+            url: initial_url.clone(),
             html_content: None,
             error_message: None,
             fetch_promise: None,
             html_renderer: HtmlRenderer::new(create_default_styles(), link_handler.clone()),
             show_raw_html: false,
             link_handler,
+            navigation: NavigationHistory::new(initial_url),
         }
     }
 }
@@ -65,25 +129,44 @@ impl eframe::App for EguiBrowser {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
         // Check if a link was clicked and handle it
         if let Some(link_url) = self.link_handler.take_link() {
-            self.url = link_url;
+            self.url = link_url.clone();
+            self.navigation.add_url(link_url);
             self.fetch_url(ctx.clone());
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("HTML Browser");
             
-            // URL input field
+            // URL input field with navigation buttons
             ui.horizontal(|ui| {
+                // Back button
+                if ui.add_enabled(self.navigation.can_go_back(), egui::Button::new("←")).clicked() {
+                    if let Some(url) = self.navigation.go_back() {
+                        self.url = url.to_string();
+                        self.fetch_url(ctx.clone());
+                    }
+                }
+                
+                // Forward button
+                if ui.add_enabled(self.navigation.can_go_forward(), egui::Button::new("→")).clicked() {
+                    if let Some(url) = self.navigation.go_forward() {
+                        self.url = url.to_string();
+                        self.fetch_url(ctx.clone());
+                    }
+                }
+                
                 ui.label("URL:");
                 let response = ui.text_edit_singleline(&mut self.url);
                 
                 // Load button
                 if ui.button("Load").clicked() {
+                    self.navigation.add_url(self.url.clone());
                     self.fetch_url(ctx.clone());
                 }
                 
                 // Automatically load when Enter is pressed in the text field
                 if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    self.navigation.add_url(self.url.clone());
                     self.fetch_url(ctx.clone());
                 }
             });
