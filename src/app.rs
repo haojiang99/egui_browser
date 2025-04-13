@@ -106,12 +106,15 @@ pub struct EguiBrowser {
     link_handler: LinkHandler,
     // Navigation history
     navigation: NavigationHistory,
+    // User agent string
+    user_agent: String,
 }
 
 impl Default for EguiBrowser {
     fn default() -> Self {
         let initial_url = "https://example.com".to_string();
         let link_handler = LinkHandler::new();
+        let firefox_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0".to_string();
         Self {
             url: initial_url.clone(),
             html_content: None,
@@ -121,6 +124,7 @@ impl Default for EguiBrowser {
             show_raw_html: false,
             link_handler,
             navigation: NavigationHistory::new(initial_url),
+            user_agent: firefox_user_agent,
         }
     }
 }
@@ -135,7 +139,7 @@ impl eframe::App for EguiBrowser {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("HTML Browser");
+            
             
             // URL input field with navigation buttons
             ui.horizontal(|ui| {
@@ -170,6 +174,26 @@ impl eframe::App for EguiBrowser {
                     self.fetch_url(ctx.clone());
                 }
             });
+            
+            // User agent options
+            ui.horizontal(|ui| {
+                ui.label("User Agent:");
+                if ui.button("Firefox").clicked() {
+                    self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0".to_string();
+                }
+                if ui.button("Chrome").clicked() {
+                    self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36".to_string();
+                }
+                if ui.button("Safari").clicked() {
+                    self.user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15".to_string();
+                }
+                if ui.button("Edge").clicked() {
+                    self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0".to_string();
+                }
+            });
+            
+            // Show current user agent
+            ui.label(format!("Current: {}", self.user_agent));
             
             // Show error message if any
             if let Some(error) = &self.error_message {
@@ -227,7 +251,11 @@ impl EguiBrowser {
     // Start a new HTTP request to fetch the URL
     fn fetch_url(&mut self, ctx: Context) {
         let url = self.url.clone();
-        let request = ehttp::Request::get(&url);
+        let user_agent = self.user_agent.clone();
+        
+        // Create request with Firefox user agent
+        let mut request = ehttp::Request::get(&url);
+        request.headers.insert("User-Agent".to_string(), user_agent);
         
         let ctx_clone = ctx.clone();
         let promise = Promise::spawn_thread("fetch_url", move || {

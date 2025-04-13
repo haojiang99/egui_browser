@@ -13,7 +13,7 @@ fn main() -> Result<(), eframe::Error> {
     };
     
     eframe::run_native(
-        "egui HTML Browser",
+        "Browser",
         options,
         Box::new(|_cc| Box::new(EguiBrowser::default())),
     )
