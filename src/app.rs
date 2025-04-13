@@ -5,6 +5,31 @@ use crate::ui_components;
 use eframe::egui;
 use egui::Context;
 use poll_promise::Promise;
+use std::sync::{Arc, Mutex};
+
+// Store the clicked link URL
+#[derive(Clone, Default)]
+pub struct LinkHandler {
+    pub clicked_link: Arc<Mutex<Option<String>>>,
+}
+
+impl LinkHandler {
+    pub fn new() -> Self {
+        Self {
+            clicked_link: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn set_link(&self, url: String) {
+        let mut link = self.clicked_link.lock().unwrap();
+        *link = Some(url);
+    }
+
+    pub fn take_link(&self) -> Option<String> {
+        let mut link = self.clicked_link.lock().unwrap();
+        link.take()
+    }
+}
 
 // Our application state
 pub struct EguiBrowser {
@@ -17,23 +42,33 @@ pub struct EguiBrowser {
     html_renderer: HtmlRenderer,
     // State for showing/hiding raw HTML
     show_raw_html: bool,
+    // Link handler for clicked links
+    link_handler: LinkHandler,
 }
 
 impl Default for EguiBrowser {
     fn default() -> Self {
+        let link_handler = LinkHandler::new();
         Self {
             url: "https://example.com".to_string(),
             html_content: None,
             error_message: None,
             fetch_promise: None,
-            html_renderer: HtmlRenderer::new(create_default_styles()),
+            html_renderer: HtmlRenderer::new(create_default_styles(), link_handler.clone()),
             show_raw_html: false,
+            link_handler,
         }
     }
 }
 
 impl eframe::App for EguiBrowser {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+        // Check if a link was clicked and handle it
+        if let Some(link_url) = self.link_handler.take_link() {
+            self.url = link_url;
+            self.fetch_url(ctx.clone());
+        }
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("HTML Browser");
             

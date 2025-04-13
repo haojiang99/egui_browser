@@ -1,5 +1,6 @@
 // src/html_renderer/renderer.rs
 use crate::style::ElementStyle;
+use crate::app::LinkHandler;
 use egui::Ui;
 use std::collections::HashMap;
 
@@ -14,11 +15,12 @@ use super::text_processor::get_text_content;
 
 pub struct HtmlRenderer {
     pub style_map: HashMap<String, ElementStyle>,
+    pub link_handler: LinkHandler,
 }
 
 impl HtmlRenderer {
-    pub fn new(style_map: HashMap<String, ElementStyle>) -> Self {
-        Self { style_map }
+    pub fn new(style_map: HashMap<String, ElementStyle>, link_handler: LinkHandler) -> Self {
+        Self { style_map, link_handler }
     }
     
     // Find the body element in the DOM
