@@ -15,9 +15,6 @@ A lightweight HTML browser built with Rust and egui.
 - Raw HTML source view toggle
 - White background for web content with dark UI elements
 
-## Screenshots
-
-[Add screenshots here after building]
 
 ## Building from Source
 
@@ -76,4 +73,4 @@ cargo run --release
 
 ## License
 
-[Add your license information here]
+MIT License
