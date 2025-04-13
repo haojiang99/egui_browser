@@ -130,6 +130,18 @@ impl Default for EguiBrowser {
 }
 
 impl EguiBrowser {
+    // Helper method to create navigation arrow buttons with text-based arrows
+    fn nav_button(&self, ui: &mut egui::Ui, text: &str, enabled: bool) -> bool {
+        let arrow_btn = egui::Button::new(
+            egui::RichText::new(text)
+                .size(16.0)
+                .strong()
+        )
+        .min_size(egui::vec2(40.0, 28.0));
+        
+        ui.add_enabled(enabled, arrow_btn).clicked()
+    }
+
     // We'll retain this method but not apply it globally
     // so UI stays dark but web content can be white
     fn _configure_light_style(&self, ctx: &Context) {
@@ -166,16 +178,16 @@ impl eframe::App for EguiBrowser {
             
             // URL input field with navigation buttons
             ui.horizontal(|ui| {
-                // Back button
-                if ui.add_enabled(self.navigation.can_go_back(), egui::Button::new("←")).clicked() {
+                // Back button with text-based arrow
+                if self.nav_button(ui, "<-", self.navigation.can_go_back()) {
                     if let Some(url) = self.navigation.go_back() {
                         self.url = url.to_string();
                         self.fetch_url(ctx.clone());
                     }
                 }
                 
-                // Forward button
-                if ui.add_enabled(self.navigation.can_go_forward(), egui::Button::new("→")).clicked() {
+                // Forward button with text-based arrow
+                if self.nav_button(ui, "->", self.navigation.can_go_forward()) {
                     if let Some(url) = self.navigation.go_forward() {
                         self.url = url.to_string();
                         self.fetch_url(ctx.clone());
