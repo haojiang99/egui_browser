@@ -54,10 +54,11 @@ pub fn render_image(
             // Display the image
             ui.add(egui::Image::new((texture_id, display_size)));
         } else {
-            // Request the image to be fetched
-            if ui.button("Load Image").clicked() {
-                // Just need to request a repaint - the app will handle loading in the update loop
-                ui.ctx().request_repaint();
+            // Automatically request the image to be fetched
+            let browser_ptr = html_renderer.browser.unwrap();
+            unsafe {
+                let browser = &mut *(browser_ptr as *mut EguiBrowser);
+                browser.fetch_image(ui.ctx(), src.clone());
             }
             
             // Show placeholder while loading
@@ -66,6 +67,9 @@ pub fn render_image(
             } else {
                 ui.label("[Loading image...]");
             }
+            
+            // Request a repaint to check for image load completion
+            ui.ctx().request_repaint();
         }
     } else {
         // No browser reference, show placeholder

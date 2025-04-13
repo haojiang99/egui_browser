@@ -4,7 +4,6 @@ use crate::html_renderer::HtmlRenderer;
 
 pub fn render_html_content(ui: &mut Ui, html_parser: &html_parser::Dom, html_renderer: &HtmlRenderer) {
     ui.separator();
-    // Remove the "Rendered HTML:" heading
     
     // Create a frame with white background for rendered HTML
     let html_frame = egui::Frame::default()
@@ -13,13 +12,13 @@ pub fn render_html_content(ui: &mut Ui, html_parser: &html_parser::Dom, html_ren
         
     html_frame.show(ui, |ui| {
         ScrollArea::vertical().show(ui, |ui| {
-            // Find the body tag for rendering
-            let body = html_renderer.find_body_element(&html_parser.children);
-            if let Some(body_children) = body {
-                html_renderer.render_html_node(ui, body_children);
+            // Find the body tag and get filtered content for rendering
+            if let Some(filtered_body) = html_renderer.find_body_element(&html_parser.children) {
+                html_renderer.render_html_node(ui, &filtered_body);
             } else {
-                // If no body tag is found, render everything
-                html_renderer.render_html_node(ui, &html_parser.children);
+                // If no body tag is found, filter and render everything
+                let filtered_content = html_renderer.filter_nodes(&html_parser.children);
+                html_renderer.render_html_node(ui, &filtered_content);
             }
         });
     });

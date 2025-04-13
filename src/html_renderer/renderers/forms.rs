@@ -30,20 +30,34 @@ pub fn render_form_element(
 // Render input element
 fn render_input(ui: &mut Ui, element: &html_parser::Element) {
     let input_type = get_attribute(element, "type", "text");
+    let name = get_attribute(element, "name", "");
     
     match input_type.as_str() {
         "button" | "submit" => {
             let value = get_attribute(element, "value", "Button");
-            let _ = ui.button(&value);
+            if value.is_empty() {
+                let _ = ui.button("Submit");
+            } else {
+                let _ = ui.button(&value);
+            }
         }
         "checkbox" => {
             let mut checked = element.attributes.contains_key("checked");
             ui.checkbox(&mut checked, "");
         }
-        "text" | "password" | "email" | _ => {
+        "hidden" => {
+            // Don't render hidden inputs
+        }
+        "search" | "text" | "password" | "email" | _ => {
             let mut value = get_attribute(element, "value", "");
             let placeholder = get_attribute(element, "placeholder", "");
-            ui.text_edit_singleline(&mut value).on_hover_text(&placeholder);
+            
+            // Create more visible text field
+            let field = egui::TextEdit::singleline(&mut value)
+                .desired_width(200.0)
+                .hint_text(if placeholder.is_empty() { &name } else { &placeholder });
+                
+            ui.add(field);
         }
     }
 }

@@ -38,12 +38,14 @@ impl HtmlRenderer {
         }
     }
     
-    // Find the body element in the DOM
-    pub fn find_body_element<'a>(&self, nodes: &'a [html_parser::Node]) -> Option<&'a [html_parser::Node]> {
+    // Find the body element in the DOM and filter out script/style content
+    pub fn find_body_element<'a>(&self, nodes: &'a [html_parser::Node]) -> Option<Vec<html_parser::Node>> {
         for node in nodes {
             if let html_parser::Node::Element(element) = node {
                 if element.name.to_lowercase() == "body" {
-                    return Some(&element.children);
+                    // Filter out script and style elements
+                    let filtered_children = self.filter_nodes(&element.children);
+                    return Some(filtered_children);
                 }
                 
                 // Recursively search in children
@@ -55,9 +57,55 @@ impl HtmlRenderer {
         None
     }
     
+    // Filter out script and style elements, and simplify deeply nested divs
+    pub fn filter_nodes(&self, nodes: &[html_parser::Node]) -> Vec<html_parser::Node> {
+        let mut filtered = Vec::new();
+        
+        for node in nodes {
+            match node {
+                html_parser::Node::Element(element) => {
+                    let tag_name = element.name.to_lowercase();
+                    
+                    // Skip script and style elements completely
+                    if tag_name == "script" || tag_name == "style" || tag_name == "noscript" {
+                        continue;
+                    }
+                    
+                    // Handle deeply nested div structures by flattening when possible
+                    if tag_name == "div" && element.children.len() == 1 {
+                        if let Some(html_parser::Node::Element(child)) = element.children.get(0) {
+                            if child.name.to_lowercase() == "div" {
+                                // Add the child's children directly, skipping one layer
+                                let grandchildren = self.filter_nodes(&child.children);
+                                filtered.extend(grandchildren);
+                                continue;
+                            }
+                        }
+                    }
+                    
+                    // For other elements, filter their children
+                    let mut cloned = element.clone();
+                    cloned.children = self.filter_nodes(&element.children);
+                    filtered.push(html_parser::Node::Element(cloned));
+                },
+                html_parser::Node::Text(text) => {
+                    // Keep only non-empty text nodes
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        filtered.push(html_parser::Node::Text(trimmed.to_string()));
+                    }
+                },
+                _ => {} // Skip comments and other node types
+            }
+        }
+        
+        filtered
+    }
+    
     // Main HTML renderer
     pub fn render_html_node(&self, ui: &mut Ui, nodes: &[html_parser::Node]) {
         for node in nodes {
+            
             match node {
                 html_parser::Node::Text(text) => {
                     // Render plain text
@@ -140,6 +188,13 @@ impl HtmlRenderer {
                         // Form elements
                         "input" | "textarea" | "button" | "select" => {
                             render_form_element(ui, element, tag_name.as_str(), self);
+                        }
+                        
+                        // Form container
+                        "form" => {
+                            ui.horizontal(|ui| {
+                                self.render_html_node(ui, &element.children);
+                            });
                         }
                         
                         // Table rendering

@@ -3,10 +3,11 @@ use crate::html_renderer::HtmlRenderer;
 use crate::style::create_default_styles;
 use crate::ui_components;
 use eframe::egui;
-use egui::{Context, Image};
+use egui::Context;
 use poll_promise::Promise;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::io::Read;
 
 // Store the clicked link URL
 #[derive(Clone, Default)]
@@ -177,6 +178,16 @@ impl eframe::App for EguiBrowser {
         // Set browser reference in renderer using a safer approach
         let browser_ptr = self as *const Self;
         self.html_renderer.browser = Some(browser_ptr);
+        
+        // On first frame, load the initial URL
+        static mut FIRST_RUN: bool = true;
+        unsafe {
+            if FIRST_RUN {
+                FIRST_RUN = false;
+                self.fetch_url(ctx.clone());
+            }
+        }
+        
         // Check if a link was clicked and handle it
         if let Some(link_url) = self.link_handler.take_link() {
             self.url = link_url.clone();
@@ -255,7 +266,9 @@ impl eframe::App for EguiBrowser {
                             // Try to convert the response bytes to a string
                             match String::from_utf8(response.bytes.clone()) {
                                 Ok(text) => {
-                                    self.html_content = Some(text);
+                                    // Preprocess the HTML to remove problematic content
+                                    let processed_html = self.preprocess_html(&text);
+                                    self.html_content = Some(processed_html);
                                     self.error_message = None;
                                 }
                                 Err(_) => {
@@ -295,23 +308,166 @@ impl eframe::App for EguiBrowser {
 }
 
 impl EguiBrowser {
-    // Start a new HTTP request to fetch the URL
+    // Preprocess HTML to remove scripts, styles, and simplify structure
+    fn preprocess_html(&self, html: &str) -> String {
+        // Check if the HTML is too large
+        if html.len() > 1_000_000 {
+            // For very large HTML, do a more aggressive truncation
+            let truncated = &html[0..500_000];
+            if let Some(end_pos) = truncated.rfind("</div>") {
+                // Just return a simplified version
+                return format!("<html><body><h1>Page content simplified</h1><p>The page was too large to display fully.</p>{}</body></html>", 
+                              &truncated[0..end_pos+6]);
+            } else {
+                return "<html><body><h1>Page too large</h1><p>The page was too large to display.</p></body></html>".to_string();
+            }
+        }
+        
+        // Use a more efficient approach for large HTML
+        let mut processed = String::with_capacity(html.len() / 2);
+        let mut in_script = false;
+        let mut in_style = false;
+        let mut skip_until_index = 0;
+        
+        // Process the HTML in a single pass
+        let chars: Vec<char> = html.chars().collect();
+        let mut i = 0;
+        
+        while i < chars.len() {
+            if i < skip_until_index {
+                i += 1;
+                continue;
+            }
+            
+            // Check for script start
+            if !in_script && !in_style && i + 7 < chars.len() && 
+               &chars[i..i+7].iter().collect::<String>() == "<script" {
+                in_script = true;
+                // Find the script end
+                let rest = chars[i..].iter().collect::<String>();
+                if let Some(end_pos) = rest.find("</script>") {
+                    skip_until_index = i + end_pos + 9;
+                    i += 1;
+                    continue;
+                }
+            }
+            
+            // Check for style start
+            if !in_script && !in_style && i + 6 < chars.len() && 
+               &chars[i..i+6].iter().collect::<String>() == "<style" {
+                in_style = true;
+                // Find the style end
+                let rest = chars[i..].iter().collect::<String>();
+                if let Some(end_pos) = rest.find("</style>") {
+                    skip_until_index = i + end_pos + 8;
+                    i += 1;
+                    continue;
+                }
+            }
+            
+            // Skip script and style content
+            if in_script {
+                if i + 9 < chars.len() && &chars[i..i+9].iter().collect::<String>() == "</script>" {
+                    in_script = false;
+                    i += 9;
+                } else {
+                    i += 1;
+                }
+                continue;
+            }
+            
+            if in_style {
+                if i + 8 < chars.len() && &chars[i..i+8].iter().collect::<String>() == "</style>" {
+                    in_style = false;
+                    i += 8;
+                } else {
+                    i += 1;
+                }
+                continue;
+            }
+            
+            // Add current character to processed output
+            processed.push(chars[i]);
+            i += 1;
+        }
+        
+        processed
+    }
+
+    // Start a new HTTP request to fetch the URL with timeout
     fn fetch_url(&mut self, ctx: Context) {
         let url = self.url.clone();
         let user_agent = self.user_agent.clone();
         
-        // Create request with Firefox user agent
+        // Create request with user agent
         let mut request = ehttp::Request::get(&url);
         request.headers.insert("User-Agent".to_string(), user_agent);
         
-        let ctx_clone = ctx.clone();
+        // Add a timeout to prevent freezing
         let promise = Promise::spawn_thread("fetch_url", move || {
-            let result = ehttp::fetch_blocking(&request);
-            ctx_clone.request_repaint();
-            result
+            // Use a more robust fetching approach with timeout
+            let client = ureq::builder()
+                .timeout_connect(std::time::Duration::from_secs(5))
+                .timeout_read(std::time::Duration::from_secs(10))
+                .build();
+            
+            match client.get(&url)
+                    .set("User-Agent", &request.headers.get("User-Agent").unwrap_or(&String::new()))
+                    .call() {
+                Ok(response) => {
+                    // Save response status before consuming the response
+                    let status = response.status();
+                    let status_text = response.status_text().to_string();
+                    
+                    // Read response body with size limit
+                    let mut bytes = Vec::new();
+                    // Limit to 2MB to prevent memory issues
+                    const MAX_SIZE: usize = 2 * 1024 * 1024;
+                    let mut reader = response.into_reader();
+                    let mut buffer = [0; 8192];
+                    let mut total_read = 0;
+                    
+                    loop {
+                        match reader.read(&mut buffer) {
+                            Ok(0) => break, // EOF
+                            Ok(n) => {
+                                total_read += n;
+                                if total_read <= MAX_SIZE {
+                                    bytes.extend_from_slice(&buffer[..n]);
+                                } else {
+                                    // We've read enough, stop here
+                                    break;
+                                }
+                            }
+                            Err(_) => return Err("Error reading response".to_string()),
+                        }
+                    }
+                    
+                    // Create a simplified response if too large
+                    if total_read > MAX_SIZE {
+                        bytes = "<html><body><h1>Content truncated</h1><p>The page was too large to display fully.</p></body></html>"
+                            .as_bytes()
+                            .to_vec();
+                    }
+                    
+                    // Create ehttp response with all required fields
+                    Ok(ehttp::Response {
+                        url: url.clone(),
+                        status,
+                        status_text,
+                        bytes,
+                        ok: status >= 200 && status < 300,
+                        headers: Default::default(), // Use an empty default header map
+                    })
+                }
+                Err(err) => {
+                    Err(format!("Failed to fetch URL: {}", err))
+                }
+            }
         });
         
         self.fetch_promise = Some(promise);
+        ctx.request_repaint(); // Request a repaint to show the spinner
     }
     
     // Fetch image from URL and add to cache
@@ -324,24 +480,42 @@ impl EguiBrowser {
         // Resolve relative URLs
         let full_url = if image_url.starts_with("http") {
             image_url.clone()
-        } else {
-            // Simple URL joining logic - could be improved
+        } else if image_url.starts_with("//") {
+            // Protocol-relative URL (//example.com/image.png)
+            if self.url.starts_with("https") {
+                format!("https:{}", image_url)
+            } else {
+                format!("http:{}", image_url)
+            }
+        } else if image_url.starts_with('/') {
+            // Absolute path from domain root
             let base_url = self.url.clone();
-            if image_url.starts_with('/') {
-                // Get domain part of the URL
-                // Find the domain part by locating the third slash (after http://)
-                if let Some(domain_end) = base_url[8..].find('/').map(|pos| pos + 8) {
-                    base_url[..domain_end].to_string() + &image_url
+            // Extract domain with protocol (http://example.com)
+            if let Some(protocol_end) = base_url.find("://") {
+                // Extract domain part
+                if let Some(domain_end) = base_url[protocol_end+3..].find('/') {
+                    format!("{}{}", &base_url[..protocol_end+3+domain_end], image_url)
                 } else {
-                    base_url + &image_url
+                    // No path component in base URL
+                    format!("{}{}", base_url, image_url)
                 }
             } else {
-                // Remove filename part from base URL
-                if let Some(last_slash) = base_url.rfind('/') {
-                    base_url[..=last_slash].to_string() + &image_url
+                // Fallback if URL doesn't have protocol
+                format!("{}{}", base_url, image_url)
+            }
+        } else {
+            // Relative path
+            let base_url = self.url.clone();
+            if let Some(last_slash) = base_url.rfind('/') {
+                // Make sure we're not just getting the protocol slashes
+                if last_slash > 8 {  // Beyond "http://" or "https://"
+                    format!("{}/{}", &base_url[..last_slash], image_url)
                 } else {
-                    base_url + "/" + &image_url
+                    // Append to the domain
+                    format!("{}/{}", base_url, image_url)
                 }
+            } else {
+                format!("{}/{}", base_url, image_url)
             }
         };
         
